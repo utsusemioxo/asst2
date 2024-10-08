@@ -1,4 +1,8 @@
 #include "tasksys.h"
+#include "itasksys.h"
+#include <memory>
+#include <thread>
+#include <vector>
 
 
 IRunnable::~IRunnable() {}
@@ -68,9 +72,23 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
     // tasks sequentially on the calling thread.
     //
 
+//    for (int i = 0; i < num_total_tasks; i++) {
+//        runnable->runTask(i, num_total_tasks);
+//    }
+    
+    
+    std::vector<std::thread> threads;
     for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+        threads.emplace_back([runnable, i, num_total_tasks]{
+            runnable->runTask(i, num_total_tasks);
+        });
     }
+
+    for(auto & thread : threads) { 
+        if (thread.joinable()) 
+            thread.join();
+    }
+
 }
 
 TaskID TaskSystemParallelSpawn::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
@@ -101,22 +119,45 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+
+    m_thread_pool = std::unique_ptr<ThreadPool>(new ThreadPool(num_threads));
 }
 
-TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {}
+TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() { 
+    m_thread_pool->Shutdown();
+}
 
+    // static int count = 0;
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_total_tasks) {
-
-
+    // std::cout << ++count << std::endl; 
     //
     // TODO: CS149 students will modify the implementation of this
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
 
+    // for (int i = 0; i < num_total_tasks; i++) {
+    //     runnable->runTask(i, num_total_tasks);
+    // }
+
+    std::vector<std::future<void>> futures;
     for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+        futures.emplace_back(m_thread_pool->AddTask(
+            [runnable, i, num_total_tasks](){
+                runnable->runTask(i, num_total_tasks);
+            })
+        );
     }
+
+    // std::cout << "num_total_tasks = " << num_total_tasks << "\n";
+
+    for (auto &future : futures) { future.get(); }
+    // std::cout << "test\n";
+    // std::cout << "\n";
+    // m_thread_pool->Shutdown();
+    // std::cout << "test\n";
+    // std::cout << "test\n";
+    // std::cout << "test\n";
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
