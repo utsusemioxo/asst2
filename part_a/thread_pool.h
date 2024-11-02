@@ -1,12 +1,12 @@
 #pragma once
 
-// #define ENABLE_LOG
+#define ENABLE_LOG
 #include <condition_variable>
 #include <functional>
 #include <future>
-// #ifdef ENABLE_LOG
+#ifdef ENABLE_LOG
 #include <iostream>
-// #endif
+#endif
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -104,6 +104,8 @@ private:
     explicit WorkerThread(ThreadPool *pool) : thread_pool(pool) {}
 
     void operator()() {
+// #define SLEEP
+#ifdef SLEEP
       while (!thread_pool->m_stop ||
              (thread_pool->m_stop && !thread_pool->m_tasks.empty())) {
         std::function<void()> task;
@@ -138,9 +140,33 @@ private:
                   << "] executing task end" << std::endl;
 #endif
       }
+#else
+      std::cout << "thread loop out\n";
+      std::atomic_bool is_empty{false};
+      {
+        std::lock_guard<std::mutex> lock(thread_pool->m_queue_mtx);
+        is_empty = thread_pool->m_tasks.empty();
+      }
+      while (!is_empty) {
+        std::cout << "thread loop in\n";
+        std::cout << "run task begin \n";
+        std::function<void()> task;
+        {
+          std::lock_guard<std::mutex> lock(thread_pool->m_queue_mtx);
+          if (this->thread_pool->m_stop /*&& this->thread_pool->m_tasks.empty()*/) {
+            return;
+          }
+          task = std::move(this->thread_pool->m_tasks.front());
+          thread_pool->m_tasks.pop();
+        }
+        std::cout << "run task begin \n";
+        task();
+        std::cout << "run task end \n";
+      }
+#endif
     }
 
   private:
-    ThreadPool *thread_pool;
+    ThreadPool* thread_pool;
   };
 };
