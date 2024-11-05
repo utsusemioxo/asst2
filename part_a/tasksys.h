@@ -4,18 +4,20 @@
 #include "itasksys.h"
 #include "thread_pool.h"
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <future>
 #include <iostream>
 #include <iterator>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <thread>
 #include <vector>
-#include <list>
-#include <chrono>
+#include <algorithm>
+#include <random>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -89,7 +91,8 @@ private:
 
   class WorkerThread {
   public:
-    explicit WorkerThread(TaskSystemParallelThreadPoolSpinning *tasksys, int index)
+    explicit WorkerThread(TaskSystemParallelThreadPoolSpinning *tasksys,
+                          int index)
         : m_tasksys(tasksys), m_index(index) {
       m_worker_tasks_max_size = 2000;
     }
@@ -113,7 +116,7 @@ private:
     void RunLocalTask() {
       int local_run_num = 0;
       // std::cout << m_tasksys->m_local_task_queue.at(m_index).size()<< " ";
-      std::unique_lock<std::mutex> ul(m_tasksys->m_local_mtx.at(m_index)); 
+      std::unique_lock<std::mutex> ul(m_tasksys->m_local_mtx.at(m_index));
       if (!m_tasksys->m_local_task_queue.at(m_index).empty()) {
         Task task = m_tasksys->m_local_task_queue.at(m_index).front();
         m_tasksys->m_local_task_queue.at(m_index).pop();
@@ -129,18 +132,27 @@ private:
       std::unique_lock<std::mutex> ul_local(m_tasksys->m_local_mtx.at(m_index));
       if (m_tasksys->m_local_task_queue.at(m_index).empty()) {
         ul_local.unlock();
-        for (int i = 0; i < m_tasksys->m_num_threads && i != m_index; i++) {
-          std::unique_lock<std::mutex> ul(m_tasksys->m_local_mtx.at(i)); 
+
+        static thread_local std::vector<int> indices;
+        if (indices.empty()) {
+            indices.resize(m_tasksys->m_num_threads);
+            std::iota(indices.begin(), indices.end(), 0);
+        }
+        std::shuffle(indices.begin(), indices.end(), std::mt19937{std::random_device{}()});
+
+        for (int i : indices) {
+          if (i==m_index) continue;
+          std::unique_lock<std::mutex> ul(m_tasksys->m_local_mtx.at(i));
           if (!m_tasksys->m_local_task_queue.at(i).empty()) {
-            //lock
+            // lock
             Task steal_task = m_tasksys->m_local_task_queue.at(i).front();
 
             // std::cout << "task steal!\n";
             // std::cout << m_tasksys->m_local_task_queue.at(i).size()<< " ";
             m_tasksys->m_local_task_queue.at(i).pop();
             ul.unlock();
-            
-            //unlock
+
+            // unlock
             ul_local.lock();
             m_tasksys->m_local_task_queue.at(m_index).push(steal_task);
             ul_local.unlock();
@@ -199,58 +211,83 @@ private:
 
   class WorkerThread {
   public:
-    explicit WorkerThread(TaskSystemParallelThreadPoolSleeping *tasksys, int index)
-      : m_tasksys(tasksys), m_index(index){
-    }
-
+    explicit WorkerThread(TaskSystemParallelThreadPoolSleeping *tasksys,
+                          int index)
+        : m_tasksys(tasksys), m_index(index) {}
 
     void RunLocalTask() {
-      std::unique_lock<std::mutex> ul_local(m_tasksys->m_local_mtx.at(m_index), std::try_to_lock);
-      if (ul_local.owns_lock()) {
+      std::unique_lock<std::mutex> ul_local(m_tasksys->m_local_mtx.at(m_index),
+                                            std::defer_lock);
+      if (TryRunTask(ul_local))
+        return;
 
-      if(!m_tasksys->m_local_task_queue.at(m_index).empty()) 
-      {
-        Task task = std::move(m_tasksys->m_local_task_queue.at(m_index).front());
+      m_tasksys->m_task_finish_cnt += m_local_run_num;
+      if (m_tasksys->m_task_finish_cnt == m_tasksys->m_num_total_tasks) {
+        m_tasksys->m_finish_cond.notify_all();
+        // std::cout << "finish ";
+      }
+      m_local_run_num = 0;
+
+      if (StealWorkWhenEmpty()) {
+        // if cannot steal, sleep, let main thread submit remaining tasks
+        WaitForTask();
+      }
+
+      // ul_local.lock();
+      // if (m_tasksys->m_task_finish_cnt == m_tasksys->m_num_total_tasks)
+        // m_tasksys->m_finish_cond.notify_one();
+      // ul_local.unlock();
+    }
+
+    bool TryRunTask(std::unique_lock<std::mutex> &ul_local) {
+      ul_local.lock();
+      if (!m_tasksys->m_local_task_queue[m_index].empty()) {
+        Task task =
+            std::move(m_tasksys->m_local_task_queue.at(m_index).front());
         m_tasksys->m_local_task_queue.at(m_index).pop_front();
         ul_local.unlock();
         task();
-        m_local_run_num += 1;
-      } else {
-        ul_local.unlock();
-        m_tasksys->m_task_finish_cnt += m_local_run_num;
-        m_local_run_num = 0;
-        if (StealWorkWhenEmpty()) {
-        // if cannot steal, sleep, let main thread submit remaining tasks
-          WaitForTask();
-        }
+        m_local_run_num++;
+        return true;
       }
-      }
+      ul_local.unlock();
+      return false;
     }
 
     void WaitForTask() {
       std::unique_lock<std::mutex> ul_local(m_tasksys->m_local_mtx[m_index]);
       m_tasksys->m_local_cond[m_index].wait(ul_local, [this]() {
-        return !m_tasksys->m_local_task_queue[m_index].empty() || m_tasksys->m_shutdown;
+        return !m_tasksys->m_local_task_queue[m_index].empty() ||
+               m_tasksys->m_shutdown;
       });
     }
 
     bool StealWorkWhenEmpty() {
-      bool need_sleep = true;
-      for (int i = 0; i < m_tasksys->m_num_threads && i != m_index; i++) {
-        std::unique_lock<std::mutex> ul(m_tasksys->m_local_mtx.at(i), std::try_to_lock);
+      static thread_local std::vector<int> indices;
+        if (indices.empty()) {
+            indices.resize(m_tasksys->m_num_threads);
+            std::iota(indices.begin(), indices.end(), 0);
+        }
+        std::shuffle(indices.begin(), indices.end(), std::mt19937{std::random_device{}()});
+
+      for (int i : indices) {
+        if (i==m_index) continue;
+        std::unique_lock<std::mutex> ul(m_tasksys->m_local_mtx.at(i),
+                                        std::try_to_lock);
         if (ul.owns_lock() && !m_tasksys->m_local_task_queue.at(i).empty()) {
-          need_sleep = false;
-          Task steal_task = std::move(m_tasksys->m_local_task_queue.at(i).back());
+          Task steal_task =
+              std::move(m_tasksys->m_local_task_queue.at(i).back());
           m_tasksys->m_local_task_queue.at(i).pop_back();
           ul.unlock();
 
-          std::unique_lock<std::mutex> ul_local(m_tasksys->m_local_mtx.at(m_index));
+          std::unique_lock<std::mutex> ul_local(
+              m_tasksys->m_local_mtx.at(m_index));
           m_tasksys->m_local_task_queue.at(m_index).push_back(steal_task);
           ul_local.unlock();
-          break;
+          return false;
         }
       }
-      return need_sleep;
+      return true;
     }
 
     void StealWork() {
@@ -260,7 +297,8 @@ private:
         for (int i = 0; i < m_tasksys->m_num_threads && i != m_index; i++) {
           std::unique_lock<std::mutex> ul(m_tasksys->m_local_mtx.at(i));
           if (!m_tasksys->m_local_task_queue.at(i).empty()) {
-            Task steal_task = std::move(m_tasksys->m_local_task_queue.at(i).back());
+            Task steal_task =
+                std::move(m_tasksys->m_local_task_queue.at(i).back());
             m_tasksys->m_local_task_queue.at(i).pop_back();
             ul.unlock();
 
@@ -283,7 +321,7 @@ private:
     std::queue<Task> m_worker_tasks;
     TaskSystemParallelThreadPoolSleeping *m_tasksys;
     int m_index;
-    int m_local_run_num {0};
+    int m_local_run_num{0};
   };
 };
 

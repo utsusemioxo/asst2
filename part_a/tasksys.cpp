@@ -236,7 +236,7 @@ void TaskSystemParallelThreadPoolSpinning::InitPool(int num_threads) {
 }
 
 void TaskSystemParallelThreadPoolSpinning::Shutdown() {
-  std::cout << "shutdown begin\n";
+  // std::cout << "shutdown begin\n";
   { m_shutdown = true; }
 
   for (auto &thread : m_thread_pool) {
@@ -249,7 +249,7 @@ void TaskSystemParallelThreadPoolSpinning::Shutdown() {
     m_thread_pool.clear();
     // m_thread_task_queue.clear();
   }
-  std::cout << "shutdown end\n";
+  // std::cout << "shutdown end\n";
 }
 
 void TaskSystemParallelThreadPoolSpinning::AddTask(Task &task, int task_id) {
@@ -341,12 +341,19 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable *runnable,
   }
 
   {
-    // std::unique_lock<std::mutex> ul(m_task_mtx);
-    // m_finish_cond.wait(ul, [this](){return m_task_finish_cnt == m_num_total_tasks;});
-    while (m_task_finish_cnt != m_num_total_tasks) {
-      std::this_thread::yield();
-    }
+      // std::this_thread::yield();
+      std::unique_lock<std::mutex> ul(m_task_mtx);
+      m_finish_cond.wait(ul, [this](){return m_task_finish_cnt == m_num_total_tasks;});
+    // while (m_task_finish_cnt != m_num_total_tasks) {
+    //   std::this_thread::yield();
+    // }
   }
+
+    // for (;;) {
+    //   if (m_task_finish_cnt == m_num_total_tasks) {
+    //     break;
+    //   }
+    // }
 }
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(
