@@ -1,2 +1,7 @@
 objs/
 runtasks
+*.perf
+perf.data
+perf.data.old
+*.svg
+FlameGraph/
