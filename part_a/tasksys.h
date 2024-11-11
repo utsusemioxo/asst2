@@ -14,10 +14,10 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <random>
+#include <stack>
 #include <thread>
 #include <vector>
-#include <algorithm>
-#include <random>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -135,13 +135,15 @@ private:
 
         static thread_local std::vector<int> indices;
         if (indices.empty()) {
-            indices.resize(m_tasksys->m_num_threads);
-            std::iota(indices.begin(), indices.end(), 0);
+          indices.resize(m_tasksys->m_num_threads);
+          std::iota(indices.begin(), indices.end(), 0);
         }
-        std::shuffle(indices.begin(), indices.end(), std::mt19937{std::random_device{}()});
+        std::shuffle(indices.begin(), indices.end(),
+                     std::mt19937{std::random_device{}()});
 
         for (int i : indices) {
-          if (i==m_index) continue;
+          if (i == m_index)
+            continue;
           std::unique_lock<std::mutex> ul(m_tasksys->m_local_mtx.at(i));
           if (!m_tasksys->m_local_task_queue.at(i).empty()) {
             // lock
@@ -201,6 +203,7 @@ private:
   std::vector<std::thread> m_thread_pool;
   std::queue<Task> m_task_queue;
   std::atomic<bool> m_shutdown{false};
+  std::atomic<bool> m_add_done{false};
   std::atomic<int> m_task_finish_cnt{0};
   int m_num_threads;
   int m_num_total_tasks;
@@ -228,15 +231,16 @@ private:
       }
       m_local_run_num = 0;
 
-      if (StealWorkWhenEmpty()) {
+      if (!StealWorkWhenEmpty(2)) {
         // if cannot steal, sleep, let main thread submit remaining tasks
         WaitForTask();
       }
 
-      // ul_local.lock();
-      // if (m_tasksys->m_task_finish_cnt == m_tasksys->m_num_total_tasks)
-        // m_tasksys->m_finish_cond.notify_one();
-      // ul_local.unlock();
+      // if (m_tasksys->m_add_done) {
+      //   StealWorkWhenEmpty();
+      // } else {
+      //   WaitForTask();
+      // }
     }
 
     bool TryRunTask(std::unique_lock<std::mutex> &ul_local) {
@@ -262,32 +266,42 @@ private:
       });
     }
 
-    bool StealWorkWhenEmpty() {
+    bool StealWorkWhenEmpty(int steal_num) {
       static thread_local std::vector<int> indices;
-        if (indices.empty()) {
-            indices.resize(m_tasksys->m_num_threads);
-            std::iota(indices.begin(), indices.end(), 0);
-        }
-        std::shuffle(indices.begin(), indices.end(), std::mt19937{std::random_device{}()});
+      if (indices.empty()) {
+        indices.resize(m_tasksys->m_num_threads);
+        std::iota(indices.begin(), indices.end(), 0);
+      }
+      std::shuffle(indices.begin(), indices.end(),
+                   std::mt19937{std::random_device{}()});
 
       for (int i : indices) {
-        if (i==m_index) continue;
+        if (i == m_index)
+          continue;
         std::unique_lock<std::mutex> ul(m_tasksys->m_local_mtx.at(i),
                                         std::try_to_lock);
-        if (ul.owns_lock() && !m_tasksys->m_local_task_queue.at(i).empty()) {
-          Task steal_task =
-              std::move(m_tasksys->m_local_task_queue.at(i).back());
-          m_tasksys->m_local_task_queue.at(i).pop_back();
+        if (ul.owns_lock() && m_tasksys->m_local_task_queue.at(i).size() >= steal_num) {
+          // int steal_size = m_tasksys->m_local_task_queue.at(i).size() / 2;
+          int steal_size = steal_num;
+        
+          for (; steal_size > 0; steal_size--) {
+            stolen_tasks.emplace(
+                std::move(m_tasksys->m_local_task_queue.at(i).back()));
+            m_tasksys->m_local_task_queue.at(i).pop_back();
+          }
           ul.unlock();
-
           std::unique_lock<std::mutex> ul_local(
               m_tasksys->m_local_mtx.at(m_index));
-          m_tasksys->m_local_task_queue.at(m_index).push_back(steal_task);
+          while (!stolen_tasks.empty()){
+            m_tasksys->m_local_task_queue.at(m_index).push_back(
+                std::move(stolen_tasks.top()));
+            stolen_tasks.pop();
+          }
           ul_local.unlock();
-          return false;
+          return true;
         }
       }
-      return true;
+      return false;
     }
 
     void StealWork() {
@@ -322,6 +336,8 @@ private:
     TaskSystemParallelThreadPoolSleeping *m_tasksys;
     int m_index;
     int m_local_run_num{0};
+
+    std::stack<Task> stolen_tasks;
   };
 };
 

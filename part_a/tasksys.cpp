@@ -340,6 +340,8 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable *runnable,
     AddTask(task, i);
   }
 
+  m_add_done = true;
+
   {
       // std::this_thread::yield();
       std::unique_lock<std::mutex> ul(m_task_mtx);
