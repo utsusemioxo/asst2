@@ -3,7 +3,6 @@
 
 #include "itasksys.h"
 
-#include <functional>
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
