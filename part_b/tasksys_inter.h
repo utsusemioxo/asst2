@@ -65,7 +65,7 @@ private:
 template <typename T> class ThreadSafeAutoBalanceQueue {
 public:
   explicit ThreadSafeAutoBalanceQueue(int num)
-      : m_queue_num(num), m_threadsafe_queue_vec(num), m_push_cnt(0) {
+      : m_queue_num(num), m_push_cnt(0), m_threadsafe_queue_vec(num){
     if (m_indices.empty()) {
       m_indices.resize(m_queue_num);
       std::iota(m_indices.begin(), m_indices.end(), 0);
@@ -113,7 +113,7 @@ public:
 private:
   const int m_queue_num;
   int m_push_cnt;
-  static thread_local std::vector<int> m_indices;
+  std::vector<int> m_indices;
   std::vector<ThreadSafeQueue<T>> m_threadsafe_queue_vec;
 };
 

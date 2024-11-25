@@ -1,8 +1,6 @@
 #include "tasksys.h"
 #include "itasksys.h"
 #include <cmath>
-#include <functional>
-#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
