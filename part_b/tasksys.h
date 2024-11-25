@@ -2,7 +2,7 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
-
+#include "tasksys_inter.h"
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -69,6 +69,9 @@ public:
   TaskID runAsyncWithDeps(IRunnable *runnable, int num_total_tasks,
                           const std::vector<TaskID> &deps);
   void sync();
+
+private:
+  WorkerManager m_mgr;
 };
 
 #endif

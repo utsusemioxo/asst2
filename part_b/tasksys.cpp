@@ -137,7 +137,7 @@ const char *TaskSystemParallelThreadPoolSleeping::name() {
 
 TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(
     int num_threads)
-    : ITaskSystem(num_threads) {
+    : ITaskSystem(num_threads), m_mgr(num_threads) {
   //
   // TODO: CS149 student implementations may decide to perform setup
   // operations (such as thread pool construction) here.

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "itasksys.h"
 #include <algorithm>
 #include <atomic>
@@ -158,6 +160,8 @@ public:
 
   std::vector<std::function<void()>> GetSubTasks();
 
+  std::function<void()> GetSubTaskWithID(int id);
+
 public:
   /* Total num of bulk task */
   const int m_num_total;
@@ -174,9 +178,17 @@ inline void BulkTask::UpdateFinishCount() { ++m_num_finish; }
 inline std::vector<std::function<void()>> BulkTask::GetSubTasks() {
   std::vector<std::function<void()>> vec(m_num_total);
   for (int i = 0; i < m_num_total; i++) {
-    vec.emplace_back([this, i]() { m_context->runTask(i, m_num_total); });
+    GetSubTaskWithID(i);
   }
   return vec;
+}
+
+inline std::function<void()> BulkTask::GetSubTaskWithID(int id) {
+  auto subtask = [this, id]() {
+    m_context->runTask(id, m_num_total);
+    m_num_finish++;
+  };
+  return subtask;
 }
 
 class WorkerManager {
@@ -204,6 +216,10 @@ public:
 
   void RunBulkTask(BulkTask &task) {
     // TODO: run task with WorkerManager
+    auto vec = task.GetSubTasks();
+    for (auto &subtask : vec) {
+      m_shared_work_queue->RoundRobinPush(subtask);
+    }
   }
 
 private:
