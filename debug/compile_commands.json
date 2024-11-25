@@ -16,9 +16,9 @@
       "objs/ppm.o",
       "../common/ppm.cpp"
     ],
-    "directory": "/home/kumo/dev/cs149_parallel_programming/asst2/part_b",
-    "file": "/home/kumo/dev/cs149_parallel_programming/asst2/common/ppm.cpp",
-    "output": "/home/kumo/dev/cs149_parallel_programming/asst2/part_b/objs/ppm.o"
+    "directory": "/Users/mizuiro/dev/cs149/asst2/part_b",
+    "file": "/Users/mizuiro/dev/cs149/asst2/common/ppm.cpp",
+    "output": "/Users/mizuiro/dev/cs149/asst2/part_b/objs/ppm.o"
   },
   {
     "arguments": [
@@ -37,30 +37,8 @@
       "objs/tasksys.o",
       "tasksys.cpp"
     ],
-    "directory": "/home/kumo/dev/cs149_parallel_programming/asst2/part_b",
-    "file": "/home/kumo/dev/cs149_parallel_programming/asst2/part_b/tasksys.cpp",
-    "output": "/home/kumo/dev/cs149_parallel_programming/asst2/part_b/objs/tasksys.o"
-  },
-  {
-    "arguments": [
-      "/usr/bin/g++",
-      "-c",
-      "-m64",
-      "-I.",
-      "-I../common",
-      "-I../tests",
-      "-Iobjs/",
-      "-O3",
-      "-std=c++11",
-      "-Wall",
-      "-g",
-      "objs/tasksys.o",
-      "-o",
-      "runtasks",
-      "../tests/main.cpp"
-    ],
-    "directory": "/home/kumo/dev/cs149_parallel_programming/asst2/part_b",
-    "file": "/home/kumo/dev/cs149_parallel_programming/asst2/tests/main.cpp",
-    "output": "/home/kumo/dev/cs149_parallel_programming/asst2/part_b/runtasks"
+    "directory": "/Users/mizuiro/dev/cs149/asst2/part_b",
+    "file": "/Users/mizuiro/dev/cs149/asst2/part_b/tasksys.cpp",
+    "output": "/Users/mizuiro/dev/cs149/asst2/part_b/objs/tasksys.o"
   }
 ]

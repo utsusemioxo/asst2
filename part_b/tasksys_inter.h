@@ -12,7 +12,7 @@
 
 template <typename T> class ThreadSafeQueue {
 public:
-  ThreadSafeQueue(){};
+  ThreadSafeQueue() {};
   void PushThreadSafe(T new_value) {
     std::lock_guard<std::mutex> lg(m_queue_mtx);
     m_data_queue.push(std::move(new_value));
@@ -64,9 +64,9 @@ template <typename T> class ThreadSafeAutoBalanceQueue {
 public:
   explicit ThreadSafeAutoBalanceQueue(int num)
       : m_queue_num(num), m_threadsafe_queue_vec(num), m_push_cnt(0) {
-    if (indices.empty()) {
-      indices.resize(m_queue_num);
-      std::iota(indices.begin(), indices.end(), 0);
+    if (m_indices.empty()) {
+      m_indices.resize(m_queue_num);
+      std::iota(m_indices.begin(), m_indices.end(), 0);
     }
   }
 
@@ -81,9 +81,9 @@ public:
   }
 
   bool TryAutoBalance(int id) {
-    std::shuffle(indices.begin(), indices.end(),
+    std::shuffle(m_indices.begin(), m_indices.end(),
                  std::mt19937{std::random_device{}()});
-    for (int i : indices) {
+    for (auto i : m_indices) {
       if (i == id)
         continue;
       if (GetWorkQueue(i).SizeThreadSafe() >= 2) {
@@ -111,7 +111,7 @@ public:
 private:
   const int m_queue_num;
   int m_push_cnt;
-  static thread_local std::vector<int> indices;
+  static thread_local std::vector<int> m_indices;
   std::vector<ThreadSafeQueue<T>> m_threadsafe_queue_vec;
 };
 
@@ -120,24 +120,24 @@ public:
   explicit WorkerThread(
       int index,
       std::shared_ptr<ThreadSafeAutoBalanceQueue<std::function<void()>>> queue,
-      std::shared_ptr<std::atomic<bool>> shutdown_flag)
-      : m_shared_work_queue(queue), m_shutdown_flag(shutdown_flag), m_index(index) {}
+      const std::atomic<bool> &shutdown_flag)
+      : m_shared_work_queue(queue), m_shutdown_flag(shutdown_flag),
+        m_index(index) {}
 
   void operator()() { WorkerLoop(); }
 
   void WorkerLoop() {
-    while (*m_shutdown_flag != true) {
+    while (m_shutdown_flag != true) {
       std::function<void()> task;
       m_shared_work_queue->AutoBalancePop(m_index, task);
       task();
     }
   }
 
-
 private:
   std::shared_ptr<ThreadSafeAutoBalanceQueue<std::function<void()>>>
       m_shared_work_queue;
-  std::shared_ptr<std::atomic<bool>> m_shutdown_flag;
+  const std::atomic<bool> &m_shutdown_flag;
   int m_index; // index for work queue
 };
 
@@ -148,7 +148,7 @@ class BulkTask {
 public:
   /** @brief construct a bulk task which contains n tasks. */
   explicit BulkTask(int n, IRunnable *runnable)
-      : m_num_total(n), m_num_finish(0), m_context(runnable){};
+      : m_num_total(n), m_num_finish(0), m_context(runnable) {};
   ~BulkTask() = default;
 
   /** @brief Check if all single task has been finished. (Thread-Safe) */
@@ -158,14 +158,13 @@ public:
 
   std::vector<std::function<void()>> GetSubTasks();
 
-
 public:
   /* Total num of bulk task */
   const int m_num_total;
   /* Number of tasks which has been executed in bulk task. */
   mutable std::atomic<int> m_num_finish;
   /* Context that bulk task need to run. */
-   IRunnable *m_context;
+  IRunnable *m_context;
 };
 
 inline bool BulkTask::AllFinished() { return m_num_finish == m_num_total; }
@@ -175,7 +174,7 @@ inline void BulkTask::UpdateFinishCount() { ++m_num_finish; }
 inline std::vector<std::function<void()>> BulkTask::GetSubTasks() {
   std::vector<std::function<void()>> vec(m_num_total);
   for (int i = 0; i < m_num_total; i++) {
-    vec.emplace_back([this, i](){m_context->runTask(i, m_num_total); });
+    vec.emplace_back([this, i]() { m_context->runTask(i, m_num_total); });
   }
   return vec;
 }
@@ -184,15 +183,17 @@ class WorkerManager {
 public:
   explicit WorkerManager(int thread_num) : m_thread_num(thread_num) {
     m_shared_work_queue =
-        std::make_shared<ThreadSafeAutoBalanceQueue<std::function<void()>>>();
+        std::make_shared<ThreadSafeAutoBalanceQueue<std::function<void()>>>(
+            thread_num);
     for (int i = 0; i < m_thread_num; i++) {
-      m_thread_pool.emplace_back(WorkerThread(i, m_shared_work_queue, std::make_shared<std::atomic<bool>>(m_shutdown)));
+      m_thread_pool.emplace_back(
+          WorkerThread(i, m_shared_work_queue, m_shutdown));
     }
   }
 
   ~WorkerManager() {
     m_shutdown = true;
-    for (auto & thread : m_thread_pool) {
+    for (auto &thread : m_thread_pool) {
       if (thread.joinable()) {
         thread.join();
       }
@@ -201,11 +202,8 @@ public:
 
   void SetShutdown() { m_shutdown = true; };
 
-  std::atomic<bool> &IsShutdown() { return m_shutdown; }
-
-  void RunBulkTask(BulkTask & task) {
-    //TODO: run task with WorkerManager
-    
+  void RunBulkTask(BulkTask &task) {
+    // TODO: run task with WorkerManager
   }
 
 private:
@@ -215,4 +213,3 @@ private:
       m_shared_work_queue;
   std::vector<std::thread> m_thread_pool;
 };
-

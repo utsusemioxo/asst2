@@ -1,3 +1,5 @@
 objs/
 runtasks
 .cache/
+compile_commands.json
+*.dSYM
